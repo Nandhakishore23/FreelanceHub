@@ -1,0 +1,248 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String  @db.ObjectId
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  sessionToken String   @unique
+  userId       String   @db.ObjectId
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  name           String?
+  email          String?   @unique
+  emailVerified  DateTime?
+  hashedPassword String?
+  image          String?
+  role           String    @default("freelancer") // "freelancer", "client", "admin"
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  accounts       Account[]
+  sessions       Session[]
+  profile        Profile?
+  jobs           Job[]            @relation("ClientJobs")
+  proposals      Proposal[]       @relation("FreelancerProposals")
+  contracts      Contract[]       @relation("FreelancerContracts")
+  clientContracts Contract[]      @relation("ClientContracts")
+  reviews        Review[]         @relation("ReceivedReviews")
+  givenReviews   Review[]         @relation("GivenReviews")
+  sentMessages   Message[]        @relation("SentMessages")
+  receivedMessages Message[]      @relation("ReceivedMessages")
+  notifications  Notification[]
+  payments       Payment[]        @relation("ClientPayments")
+  receivedPayments Payment[]      @relation("FreelancerPayments")
+}
+
+model VerificationToken {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Profile {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @unique @db.ObjectId
+  title       String?
+  bio         String?
+  skills      String[] @default([])
+  hourlyRate  Float?
+  location    String?
+  avatar      String?
+  portfolio   Json[]   @default([])
+  education   Json[]   @default([])
+  experience  Json[]   @default([])
+  languages   Json[]   @default([])
+  socialLinks Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Job {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  clientId        String   @db.ObjectId
+  title           String
+  description     String
+  category        String
+  type            String   // "fixed" or "hourly"
+  budgetMin       Float
+  budgetMax       Float
+  duration        String?
+  skills          String[] @default([])
+  experienceLevel String   // "entry", "intermediate", "expert"
+  status          String   @default("open") // "open", "in-progress", "completed", "cancelled"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  client          User      @relation("ClientJobs", fields: [clientId], references: [id])
+  proposals       Proposal[]
+  contract        Contract?
+}
+
+model Proposal {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  jobId             String   @db.ObjectId
+  freelancerId      String   @db.ObjectId
+  coverLetter       String
+  proposedBudget    Float
+  estimatedDuration String?
+  attachments       String[] @default([])
+  status            String   @default("pending") // "pending", "accepted", "rejected"
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  job               Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  freelancer        User     @relation("FreelancerProposals", fields: [freelancerId], references: [id])
+  contract          Contract?
+}
+
+model Contract {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  jobId        String   @unique @db.ObjectId
+  proposalId   String   @unique @db.ObjectId
+  clientId     String   @db.ObjectId
+  freelancerId String   @db.ObjectId
+  terms        String
+  startDate    DateTime @default(now())
+  endDate      DateTime?
+  milestones   Json[]   @default([])
+  status       String   @default("active") // "active", "completed", "cancelled", "disputed"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  job          Job      @relation(fields: [jobId], references: [id])
+  proposal     Proposal @relation(fields: [proposalId], references: [id])
+  client       User     @relation("ClientContracts", fields: [clientId], references: [id])
+  freelancer   User     @relation("FreelancerContracts", fields: [freelancerId], references: [id])
+  payments     Payment[]
+  reviews      Review[]
+}
+
+model Payment {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  contractId  String   @db.ObjectId
+  clientId    String   @db.ObjectId
+  freelancerId String   @db.ObjectId
+  amount      Float
+  status      String   @default("pending") // "pending", "completed", "refunded"
+  type        String   // "milestone", "hourly", "bonus"
+  description String?
+  stripePaymentId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contract    Contract @relation(fields: [contractId], references: [id])
+  client      User     @relation("ClientPayments", fields: [clientId], references: [id])
+  freelancer  User     @relation("FreelancerPayments", fields: [freelancerId], references: [id])
+}
+
+model Review {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  contractId  String   @db.ObjectId
+  fromUserId  String   @db.ObjectId
+  toUserId    String   @db.ObjectId
+  rating      Float
+  comment     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contract    Contract @relation(fields: [contractId], references: [id])
+  fromUser    User     @relation("GivenReviews", fields: [fromUserId], references: [id])
+  toUser      User     @relation("ReceivedReviews", fields: [toUserId], references: [id])
+}
+
+model Conversation {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  participants String[] // Array of user IDs
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  messages    Message[]
+}
+
+model Message {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String   @db.ObjectId
+  senderId       String   @db.ObjectId
+  receiverId     String   @db.ObjectId
+  content        String
+  attachments    String[] @default([])
+  readAt         DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id])
+  receiver       User         @relation("ReceivedMessages", fields: [receiverId], references: [id])
+}
+
+model Notification {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  type        String   // "message", "proposal", "contract", "payment", "review"
+  title       String
+  content     String
+  isRead      Boolean  @default(false)
+  link        String?
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PageView {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String?   @db.ObjectId
+  page        String
+  referrer    String?
+  userAgent   String?
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+}
+
+model Event {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String?   @db.ObjectId
+  eventType   String
+  eventData   Json      @default("{}")
+  page        String?
+  referrer    String?
+  userAgent   String?
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+}
+
